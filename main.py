@@ -26,9 +26,9 @@ def create_output_dirs():
         os.mkdir(SUBMISSIONS_DIR)
 
 
-def train(model, model_path, train_files, val_files, train_masks, val_masks, batch_size):
+def train(model, model_path, train_files, val_files, train_masks, val_masks, epochs, batch_size):
     """
-    Trains Carvana model with keras; either using a batch generator or 
+    Trains Carvana model with keras; either using a batch generator or
     just a usual fit function
     :param model: Carvana U-Net model
     :param model_path: path of the model file (stored in HDF format)
@@ -36,7 +36,9 @@ def train(model, model_path, train_files, val_files, train_masks, val_masks, bat
     :param val_files: list of validation image files
     :param train_masks: list of train mask files
     :param val_masks: list of validation mask files
-    :param batch_size: train batch size; should be small (ca. 8 for a GPU with 6 GB RAM) 
+    :param epochs: Number of epochs
+    :param batch_size: train batch size; should be small
+    (ca. 8 for a GPU with 6 GB RAM) 
     because of the image size
     """
     model.compile(
@@ -55,7 +57,7 @@ def train(model, model_path, train_files, val_files, train_masks, val_masks, bat
             steps_per_epoch=len(train_files)/batch_size,
             validation_data=dpp.batch_generator(val_files, batch_size),
             validation_steps=len(val_files)/batch_size,
-            epochs=10,
+            epochs=epochs,
             callbacks=callbacks)
     else:
         train_images, train_mask_images = dpp.load_images(train_files, train_masks, 32)
@@ -66,7 +68,7 @@ def train(model, model_path, train_files, val_files, train_masks, val_masks, bat
         model.fit(
             x=train_images,
             y=train_mask_images,
-            epochs=20,
+            epochs=epochs,
             validation_data=(val_images, val_mask_images),
             batch_size=batch_size)
 
@@ -185,7 +187,7 @@ def predict_and_save_images(model):
 if __name__ == '__main__':
     create_output_dirs()
 
-    carvana_model = cm.UNET_Carvana(dropout_val=0.05, batch_norm=True)
+    carvana_model = cm.UNET_Carvana(dropout_val=0.5, batch_norm=True)
 
     # train or load the model
     model_path = MODELS_DIR + 'cravana_unet.h5'
@@ -202,6 +204,7 @@ if __name__ == '__main__':
             val_files=val_files,
             train_masks=train_masks,
             val_masks=val_masks,
+            epochs=15,
             batch_size=8)
 
     # predict_and_save_images(carvana_model)
