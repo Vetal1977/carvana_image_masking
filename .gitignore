@@ -1,0 +1,8 @@
+models/
+submissions/
+train*/
+test*/
+predictions/
+*.zip
+.vscode/
+__pycache__/
