@@ -95,42 +95,53 @@ def create_upscaled_mask(pred_mask):
     return upscaled_pred
 
 
-def predict_and_make_submission_file(model):
+def predict_and_make_submission_file(model, no_of_pred_at_once):
     """
     Makes prediction for test images and creates a submission CSV file
     :param model: trained Carvana model
     """
-    df = DataFrame(columns=('img', 'rle'))
+    df = DataFrame(columns=('img', 'rle_mask'))
 
     # list test image files and run prediction on all of them
     test_files = os.listdir(TEST_DIR)
     no_of_test_files = len(test_files)
-    for ii, test_file in enumerate(test_files):
-        if ii % 50 == 0:
-            now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print('{}: Processing {} of {} - {}...'.format(
-                now, ii + 1, no_of_test_files, test_file))
+    start = 0
+    while start < no_of_test_files:
+        end = min(start + no_of_pred_at_once, no_of_test_files)
+        predict_files = test_files[start:end]
+        
+        now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print('{}: Processing {} - {} of {} - {}...'.format(
+            now, start, end, no_of_test_files, predict_files[0]))
 
-        # resize image for prediction - it must have the same size
-        # as by training
-        test_img = image_ops.load_and_resize_image(
-            TEST_DIR + test_file,
-            image_ops.IMAGE_HEIGHT_TRAIN,
-            image_ops.IMAGE_WIDTH_TRAIN)
+        test_images = []
+        pred_names = []
+        for _, test_file in enumerate(predict_files):
+            # resize image for prediction - it must have the same size
+            # as by training
+            test_img = image_ops.load_and_resize_image(
+                TEST_DIR + test_file,
+                image_ops.IMAGE_HEIGHT_TRAIN,
+                image_ops.IMAGE_WIDTH_TRAIN)
+            test_images.append(test_img)
+            pred_names.append(test_file)
 
-        # predict (4 dimensional array is expected)
-        test_img = np.expand_dims(test_img, axis=0)
-        predictions = model.predict([test_img])
+        # predict
+        test_images = np.array(test_images)
+        predictions = model.predict(test_images)
 
-        # upscale predicted mask to form RLE string
-        upscaled_pred = create_upscaled_mask(predictions[0])
+        for ii in range(predictions.shape[0]):
+            # upscale predicted mask to form RLE string
+            upscaled_pred = create_upscaled_mask(predictions[ii])
 
-        # create RLE string...
-        rle_string = image_ops.rle(upscaled_pred)
+            # create RLE string...
+            rle_string = image_ops.rle(upscaled_pred)
 
-        # ... and save it into data frame
-        df.loc[-1] = (test_file, rle_string)
-        df.index += 1
+            # ... and save it into data frame
+            df.loc[-1] = (pred_names[ii], rle_string)
+            df.index += 1
+
+        start += no_of_pred_at_once
 
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     RES_FILE_NAME = SUBMISSIONS_DIR + '{}_submission.csv.gz'.format(now)
@@ -138,7 +149,7 @@ def predict_and_make_submission_file(model):
     print('Results are written into ', RES_FILE_NAME)
 
 
-def predict_and_save_images(model):
+def predict_and_save_images(model, no_of_pred_at_once):
     """
     [For debug purpose] Makes prediction for test images and saves masks
     and images to the disk. Must be used only for a small number of test images!
@@ -147,47 +158,54 @@ def predict_and_save_images(model):
     # list files in the train folder with a small number of images
     test_files = os.listdir(SMALL_TEST_DIR)
     no_of_test_files = len(test_files)
-    for ii, test_file in enumerate(test_files):
-        if ii % 5 == 0:
-            now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print('{}: Processing {} of {} - {}...'.format(
-                now, ii + 1, no_of_test_files, test_file))
+    start = 0
+    while start < no_of_test_files:
+        end = min(start + no_of_pred_at_once, no_of_test_files)
+        predict_files = test_files[start:end]
+        
+        now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print('{}: Processing {} - {} of {} - {}...'.format(
+            now, start, end, no_of_test_files, predict_files[0]))
 
-        # resize image for prediction - it must have the same size
-        # as by training
-        test_img = image_ops.load_and_resize_image(
-            TEST_DIR + test_file,
-            image_ops.IMAGE_HEIGHT_TRAIN,
-            image_ops.IMAGE_WIDTH_TRAIN)
+        test_images = []
+        for ii, test_file in enumerate(predict_files):
+            # resize image for prediction - it must have the same size
+            # as by training
+            test_img = image_ops.load_and_resize_image(
+                TEST_DIR + test_file,
+                image_ops.IMAGE_HEIGHT_TRAIN,
+                image_ops.IMAGE_WIDTH_TRAIN)
+            test_images.append(test_img)
 
-        # calculate upscaled source image (to demo, how the upscaling is working)
-        upscaled_src = image_ops.resize_image(
-            (255*test_img).astype(np.uint8),
-            image_ops.IMAGE_HEIGHT_ORIG,
-            image_ops.IMAGE_WIDTH_ORIG)
+            # calculate upscaled source image (to demo, how the upscaling is working)
+            upscaled_src = image_ops.resize_image(
+                (255*test_img).astype(np.uint8),
+                image_ops.IMAGE_HEIGHT_ORIG,
+                image_ops.IMAGE_WIDTH_ORIG)
+            io.imsave('./predictions/{:03d}_{}.jpg'.format(start + ii, test_file), upscaled_src)
 
-        # predict (4 dimensional array is expected)
-        test_img = np.expand_dims(test_img, axis=0)
-        predictions = model.predict([test_img])
+        # predict
+        test_images = np.array(test_images)
+        predictions = model.predict(test_images)
 
-        # calcualted upscaled predicted mask
-        upscaled_pred = predictions[0]
-        upscaled_pred[upscaled_pred > 0.5] = 1
-        upscaled_pred[upscaled_pred <= 0.5] = 0
-        upscaled_pred = image_ops.resize_image(
-            (255*upscaled_pred).astype(np.uint8),
-            image_ops.IMAGE_HEIGHT_ORIG,
-            image_ops.IMAGE_WIDTH_ORIG)
+        for ii in range(predictions.shape[0]):
+            # calcualted upscaled predicted mask
+            upscaled_pred = predictions[ii]
+            upscaled_pred[upscaled_pred > 0.5] = 1
+            upscaled_pred[upscaled_pred <= 0.5] = 0
+            upscaled_pred = image_ops.resize_image(
+                (255*upscaled_pred).astype(np.uint8),
+                image_ops.IMAGE_HEIGHT_ORIG,
+                image_ops.IMAGE_WIDTH_ORIG)
+            io.imsave('./predictions/{:03d}_pred.jpg'.format(start + ii), np.squeeze(upscaled_pred))
 
-        # save upscaled sources image and predicted mask
-        io.imsave('./predictions/{:03d}.jpg'.format(ii), upscaled_src)
-        io.imsave('./predictions/{:03d}_pred.jpg'.format(ii), np.squeeze(upscaled_pred))
+        start += no_of_pred_at_once
 
 
 if __name__ == '__main__':
     create_output_dirs()
 
-    carvana_model = cm.UNET_Carvana(dropout_val=0.5, batch_norm=True)
+    carvana_model = cm.UNET_Carvana(dropout_val=0.1, batch_norm=True)
 
     # train or load the model
     model_path = MODELS_DIR + 'cravana_unet.h5'
@@ -207,5 +225,5 @@ if __name__ == '__main__':
             epochs=15,
             batch_size=8)
 
-    # predict_and_save_images(carvana_model)
-    predict_and_make_submission_file(carvana_model)
+    # predict_and_save_images(carvana_model, 20)
+    predict_and_make_submission_file(carvana_model, 20)
