@@ -5,3 +5,4 @@ You need to download train and test images and extract them into _train_ and _te
 python main.py
 ```
 to train the model and make predictions. Be aware, this is a long-time process - it took several hours at my GPU-powered PC. It could be optimized though.
+The public leaderboard score is 0.993. The source could be used as a basis for further improvements.
